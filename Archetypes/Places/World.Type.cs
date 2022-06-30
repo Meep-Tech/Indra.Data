@@ -1,6 +1,10 @@
-﻿namespace Indra.Data {
+﻿using Meep.Tech.Data;
+
+namespace Indra.Data {
 
   public partial class World {
+
+    [Branch]
     public new class Type : Place.Type {
 
       /// <summary>
@@ -8,7 +12,7 @@
       /// </summary>
       public static Identity Basic {
         get;
-      } = new("Basic");
+      } = new("Basic", nameof(World));
 
 
       /// <summary>

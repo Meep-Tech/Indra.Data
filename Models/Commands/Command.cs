@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using Meep.Tech.Data.Configuration;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Indra.Data {
@@ -25,6 +26,7 @@ namespace Indra.Data {
   /// <summary>
   /// The Base Model for all Commands
   /// </summary>
+  [GenericTestArgument(typeof(Thing), 0)]
   public partial class Command<TActsOn> 
     : Meep.Tech.Data.Model<Command<TActsOn>, Command<TActsOn>.Type>,
       Meep.Tech.Data.IModel.IUseDefaultUniverse,

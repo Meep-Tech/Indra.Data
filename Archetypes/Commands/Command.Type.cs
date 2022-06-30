@@ -25,14 +25,18 @@ namespace Indra.Data {
     /// <summary>
     /// The Base Archetype for Commands
     /// </summary>
-    [GenericTestArgument(typeof(World), 0)]
     public abstract class Type 
       : Meep.Tech.Data.Archetype<Command<TActsOn>, Command<TActsOn>.Type>.WithDefaultParamBasedModelBuilders,
-        //Archetype.IBuildOneForEach<IModel.BaseType, Type>.Lazily,
         ICommandType 
     {
       bool? _hasRequiredParameters;
       readonly Dictionary<Parameter.Data, int> _parameters;
+
+      /// <summary>
+      /// The model type this command acts on.
+      /// </summary>
+      public virtual System.Type ModelType
+        => typeof(TActsOn);
 
       /// <summary>
       /// A description of the command
@@ -83,15 +87,6 @@ namespace Indra.Data {
         DefaultDescription = description;
       }
 
-      /*IModel.BaseType IBuildOneForEach<IModel.BaseType, Type>.Lazily.AssociatedEnum { 
-        get; 
-        set;
-      }
-
-      Type IBuildOneForEach<IModel.BaseType, Type>.Lazily.ConstructArchetypeFor(IModel.BaseType enumeration) {
-        throw new NotImplementedException();
-      }*/
-
       /// <summary>
       /// Quickly check if this has a given parameter type
       /// </summary>
@@ -131,7 +126,9 @@ namespace Indra.Data {
         string permissionName = model + "_" + Id.Key;
 
         // Make sure the player has permissions where they are, and where the model is.
-        _validateContainingPlacePermissions(model.Location, executor, permissionName);
+        if (model is Thing thing) {
+          _validateContainingPlacePermissions(thing.Location, executor, permissionName);
+        }
         _validateContainingPlacePermissions(atLocation, executor, permissionName);
 
         /// we don't need to validate anything else if we're trying to act on a place

@@ -9,6 +9,12 @@ using Meep.Tech.Data.IO;
 using Newtonsoft.Json;
 
 namespace Indra.Data {
+
+  /// <summary>
+  /// A character a player uses as an avatar to move around the world.
+  /// </summary>
+
+  [Meep.Tech.Data.Configuration.Dependency(typeof(User))]
   public partial class PlayerCharacter : Model<PlayerCharacter>.WithComponents, IModel {
     readonly Dictionary<string, Permission> permissions = new();
     List<string> IModel._requiredPermissions { get; set; }
@@ -31,12 +37,13 @@ namespace Indra.Data {
     /// The unique name of the character.
     /// </summary>
     [AutoBuild, Required, NotNull]
+    [TestValue("Bob")]
     public string UniqueName { get; private set; }
 
     /// <summary>
     /// The display name of the character.
     /// </summary>
-    [AutoBuild, Required, NotNull]
+    [AutoBuild(DefaultValueGetterDelegateName = nameof(_getDefaultDisplayName))]
     public string DisplayName { get; private set; }
 
     /// <summary>
@@ -45,7 +52,8 @@ namespace Indra.Data {
     [AutoBuild, Required, NotNull]
     [AutoPort]
     [JsonIgnore]
-    [Indra.Data.Ignore]
+    [Indra.Data.Immutable]
+    [TestValueIsTestModel]
     public User Creator { get; private set; }
 
     /// <summary>
@@ -58,8 +66,10 @@ namespace Indra.Data {
     /// TODO: this should try to return the player's location within the world the request for this information is requested from.
     /// To get location in another world, use GetLocation(World);
     /// </summary>
-    public Place Location
-      => throw new System.NotImplementedException();
+    public Place Location {
+      get;
+      private set;
+    }
 
     public Place GetLocation(World world) {
       throw new System.NotImplementedException();
@@ -81,6 +91,10 @@ namespace Indra.Data {
         )).AsSingleItemEnumerable()
       );
     }
+
+    AutoBuildAttribute.DefaultValueGetter _getDefaultDisplayName 
+      = (builder, model) 
+        => (model as PlayerCharacter).DisplayName = builder.GetParam(nameof(UniqueName), (model as PlayerCharacter).DisplayName); 
 
     #endregion
   }

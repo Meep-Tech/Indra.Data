@@ -7,12 +7,14 @@ namespace Indra.Data {
   public class User : Model<User>.WithComponents, ICached {
 
     [AutoBuild, NotNull, Required]
+    [TestValue("Bob")]
     public string UniqueName {
       get;
       private set;
     }
 
     [AutoBuild, NotNull, Required, JsonIgnore]
+    [TestValue("###")]
     public string PasswordHash {
       get;
       private set;

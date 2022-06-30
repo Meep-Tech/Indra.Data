@@ -1,14 +1,14 @@
 ﻿namespace Indra.Data {
 
-  public partial class Place {
+  public partial class Thing {
 
     /// <summary>
-    /// The Base Archetype for Worlds
+    /// The Base Archetype for Objects
     /// </summary>
-    public new abstract class Type : Model<Place, Place.Type>.Type {
+    public new abstract class Type : Model<Thing, Type>.Type {
 
       /// <summary>
-      /// Used to make new Child Archetypes for Place.Type 
+      /// Used to make new Child Archetypes for Object.Type 
       /// </summary>
       /// <param name="id">The unique identity of the Child Archetype</param>
       protected Type(Identity id)

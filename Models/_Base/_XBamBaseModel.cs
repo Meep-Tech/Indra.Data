@@ -6,11 +6,23 @@ namespace Indra.Data {
   /// <summary>
   /// A model that commands can be called on in indra
   /// </summary>
-  public interface IModel : Meep.Tech.Data.IModel.IUseDefaultUniverse, ICached {
+  public partial interface IModel : Meep.Tech.Data.IModel.IUseDefaultUniverse, ICached {
 
-    internal class BaseType : Enumeration<BaseType> {
-      internal BaseType(object uniqueIdentifier, Universe universe = null) 
-        : base(uniqueIdentifier, universe) {}
+    public class BaseType : Enumeration<BaseType> {
+
+      public string Name {
+        get;
+      }
+
+      public System.Type Type {
+        get;
+      }
+
+      internal BaseType(System.Type modelType, Universe universe = null) 
+        : base(modelType.FullName, universe) {
+          Name = modelType.Name;
+          Type = modelType;
+        }
     }
 
     /// <summary>
@@ -25,10 +37,6 @@ namespace Indra.Data {
     /// </summary>
     public IEnumerable<string> RequiredPermissions
       => _requiredPermissions;
-
-    Place Location {
-      get;
-    }
 
     /// <summary>
     /// Required permissions for interactions with this model.
@@ -48,22 +56,17 @@ namespace Indra.Data {
       where TArchetypeBase : Model<TModelBase, TArchetypeBase>.Type {
 
     static Model() {
+      new IModel.BaseType(typeof(TModelBase));
       IModel._allBaseModelTypes.Add(typeof(TModelBase));
     }
 
-    [Indra.Data.Ignore]
+    [Indra.Data.Immutable]
     public string Id {
       get;
       private set;
     } string IUnique.Id {
       get => Id;
       set => Id = value;
-    }
-
-    [AutoBuild]
-    public Place Location {
-      get; 
-      internal set; 
     }
 
     [AutoBuild(ParameterName = nameof(IModel.RequiredPermissions))]
