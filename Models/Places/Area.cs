@@ -11,7 +11,6 @@ namespace Indra.Data {
 
     [AutoBuild, Required, NotNull]
     [AutoPort]
-    [Indra.Data.Immutable]
     [TestValueIsTestModel]
     public Room Room {
       get;

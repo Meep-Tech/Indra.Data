@@ -7,17 +7,13 @@ using System.Reflection;
 
 namespace Indra.Data {
 
-  public abstract partial class BuiltInCommand<TCommand> where TCommand : Command<IModel>.Type,
+  /*public abstract partial class BuiltInCommand<TCommand> where TCommand : Command<IModel>.Type,
         Archetype.ISplayed<IModel.BaseType, TCommand> { } 
 
   public abstract partial class BuiltInCommand {
 
     [Meep.Tech.Data.Configuration.Loader.Settings.DoNotBuildInInitialLoad]
     public sealed class Create : BuiltInCommand<Create> {
-
-      ///<summary><inheritdoc/></summary>
-      public override bool RequiresTarget
-          => false;
 
       ///<summary><inheritdoc/></summary>
       public override System.Type RequiredProximity
@@ -78,5 +74,5 @@ namespace Indra.Data {
         }
       }
     }
-  }
+  }*/
 }

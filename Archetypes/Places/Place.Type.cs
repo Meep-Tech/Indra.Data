@@ -1,6 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using Meep.Tech.Data.IO;
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 
 namespace Indra.Data {
 
@@ -9,7 +12,7 @@ namespace Indra.Data {
     /// <summary>
     /// The Base Archetype for Worlds
     /// </summary>
-    public new abstract class Type : Model<Place, Place.Type>.Type {
+    public new abstract class Type : Model<Place, Place.Type>.Type, Meep.Tech.Data.IO.IHavePortableModel<Place> {
 
       /// <summary>
       /// The default name for places of this type
@@ -39,6 +42,15 @@ namespace Indra.Data {
       /// </summary>
       public new virtual Place Make(params (string name, object value)[] withParams)
         => base.Make(withParams);
+
+      ModelPorter<Place> IHavePortableModel<Place>.CreateModelPorter()
+        => new(
+          Id.Universe,
+          "_locations",
+          p => p.Id,
+          p => p.Name,
+          getPreSubFolderPath: p => Path.Combine("_worlds", p.World.UniqueName)
+        );
     }
   }
 }

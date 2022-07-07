@@ -1,23 +1,225 @@
 ﻿using Meep.Tech.Collections.Generic;
 using Meep.Tech.Data;
-using Meep.Tech.Data.Configuration;
 using Meep.Tech.Data.IO;
 using Meep.Tech.Data.Utility;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using static Indra.Data.PlayerCharacter;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace Indra.Data {
 
   /// <summary>
   /// The base interface for a type of command.
   /// </summary>
-  public interface ICommandType {
-    ICommand Make();
+  public interface ICommandType : IFactory {
+
+    /// <summary>
+    /// The parameters for this command type
+    /// </summary>
     IReadOnlyList<Parameter.Data> Parameters {
       get;
     }
+
+    /// <summary>
+    /// The required proximity. This should be a typeof Place, or null if it can be done anywhere.
+    /// </summary>
+    System.Type RequiredProximity {
+      get;
+    }
+
+    /// <summary>
+    /// The return value type of this command.
+    /// Null means nothing is expected; (void)
+    /// </summary>
+    System.Type ReturnType {
+      get;
+    }
+
+    /// <summary>
+    /// If this command returns a value
+    /// </summary>
+    bool ReturnsValue
+      => ReturnType is not null;
+
+    /// <summary>
+    /// If this command can be undone.
+    /// </summary>
+    bool CanBeUndone {
+      get;
+    }
+
+    /// <summary>
+    /// Get an archetype name that was created from a model method
+    /// </summary>
+    public static ICommandType GetFromMethod(System.Type modelType, string commandMethodName, SpecialAutoCommandType? specialAutoCommandType = null)
+      => (ICommandType)Archetypes.Id[GetMemberCommandKey(modelType, commandMethodName)].Archetype;
+
+    /// <summary>
+    /// Special types of auto generated commands
+    /// </summary>
+    public enum SpecialAutoCommandType {
+      Get,
+      Update,
+      Add,
+      Remove
+    }
+
+    /// <summary>
+    /// Get the key for a command archetype made from the ModelCommandAttribute.
+    /// </summary>
+    public static string GetMemberCommandKey(Type modelType, string commandMemberName, SpecialAutoCommandType? specialAutoCommandType = null) {
+      return modelType.Namespace + ".Command." + modelType.Name + "." + (specialAutoCommandType is not null ? specialAutoCommandType.ToString() : "") + commandMemberName;
+    }
+    
+    #region Validation and Permissions
+
+    /// <summary>
+    /// Try to make a command name conform to CammelCase
+    /// </summary>
+    public static string CleanCommandName(string rawCommandName)
+      => rawCommandName
+        .Trim(new char[] { ' ', '_' })
+        .Replace('_', ' ')
+        .Split(new[] { " " }, StringSplitOptions.RemoveEmptyEntries)
+        .Select(s => char.ToUpperInvariant(s[0]) + s.Substring(1, s.Length - 1))
+        .Aggregate(string.Empty, (s1, s2) => s1 + s2);
+
+    public static void GrantPermission(PlayerCharacter granter, PlayerCharacter toPlayer, string permissionName) {
+      throw new NotImplementedException();
+    }
+
+    /// <summary>
+    /// Check to make sure a player has permissions for a given command.
+    /// </summary>
+    public static bool CheckPermission(ICommandType commandType, IActor executor, IModel onModel, ILocation atLocation, out string message, IEnumerable<string> withModifiers = null) {
+      if (onModel is null) {
+        throw new ArgumentNullException(nameof(onModel));
+      }
+
+      if (!_validateProximity(commandType.RequiredProximity, executor, atLocation, onModel, out message)) {
+        return false;
+      }
+
+      // check for permission limits
+      string permissionName = GetModelLevelPermissionName(commandType, onModel, withModifiers);
+
+      // Make sure the player has permissions where they are, and where the model is.
+      if (onModel is Thing thing) {
+        if (!_validateContainingPlacePermissions(thing.Location, executor, permissionName, commandType.Id.Key, withModifiers, out message)) {
+          return false;
+        }
+      }
+      if (!_validateContainingPlacePermissions(atLocation, executor, permissionName, commandType.Id.Key, withModifiers, out message)) {
+        return false;
+      }
+
+      /// we don't need to validate anything else if we're trying to act on a place
+      if (onModel is not null && !typeof(Place).IsAssignableFrom(onModel.GetType())) {
+        if (!_validateModelLevelPermissions(permissionName, onModel, executor, out message)) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>
+    /// Get the name of a permission that can be required to use this command on this model.
+    /// </summary>
+    public static string GetModelLevelPermissionName(ICommandType commandType, IModel targetModel, IEnumerable<string> withModifiers = null) {
+      var key = targetModel?.Id + "_" + commandType.Id.Key;
+      if (withModifiers is not null && withModifiers.Any()) {
+        withModifiers.ForEach(m => key += $"_+_{m}");
+      }
+      return key;
+    }
+
+    /// <summary>
+    /// Get the name of a permission that can be required to use this command on this model.
+    /// </summary>
+    public static string GetContainingPlacePermissionName(ICommandType commandType, Place.Type placeLevelType, ILocation location, IEnumerable<string> withModifiers = null)
+      => _getContainingPlacePermissionName(commandType.Id.Key, placeLevelType.ModelTypeProduced.Name, location, withModifiers);
+
+    private static string _getContainingPlacePermissionName(string commandTypeKey, string placeLevelType, ILocation location, IEnumerable<string> withModifiers = null) {
+      var key = location.Id + "_" + placeLevelType + "_" + commandTypeKey;
+      if (withModifiers is not null && withModifiers.Any()) {
+        withModifiers.ForEach(m => key += $"_+_{m}");
+      }
+      return key;
+    }
+
+    private static bool _validateContainingPlacePermissions(ILocation containingLocation, IActor executor, string permissionName, string commandKey, IEnumerable<string> withModifiers, out string message) {
+      if (containingLocation is World world) {
+        if (!_validatePlaceLevelPermissions(executor, world, permissionName, commandKey, withModifiers, out message)) {
+          return false;
+        }
+      }
+      else if (containingLocation is Room room) {
+        if (!_validatePlaceLevelPermissions(executor, room, permissionName, commandKey, withModifiers, out message)
+          || !_validatePlaceLevelPermissions(executor, room.World, permissionName, commandKey, withModifiers, out message)
+        ) {
+          return false;
+        }
+      }
+      else if (containingLocation is Area area) {
+        if (!_validatePlaceLevelPermissions(executor, area, permissionName, commandKey, withModifiers, out message)
+          || !_validatePlaceLevelPermissions(executor, area.Room, permissionName, commandKey, withModifiers, out message)
+          || !_validatePlaceLevelPermissions(executor, area.Room.World, permissionName, commandKey, withModifiers, out message)
+        ) { return false; }
+      }
+
+      message = "Success!";
+      return true;
+    }
+
+    private static bool _validateModelLevelPermissions(string permissionName, IModel model, IActor executor, out string message) {
+      if (model.RequiredPermissions.Contains(permissionName)) {
+        if (!executor.GrantedPermissions.Contains(permissionName)) {
+          message = $"Character: {executor.UniqueName} does not have the permission: {permissionName} required at the model level by model: {model}::{model.Id}";
+          return false;
+        }
+      }
+
+      message = "Success!";
+      return true;
+    }
+
+    private static bool _validatePlaceLevelPermissions<TLocation>(
+      IActor executor,
+      TLocation atLocation, 
+      string permissionName, 
+      string commandKey,
+      IEnumerable<string> withModifiers,
+      out string message
+    )
+      where TLocation : ILocation 
+    {
+      bool isGeneric = false;
+      if ((atLocation as IModel).RequiredPermissions.Contains(permissionName) || (isGeneric = (atLocation as IModel).RequiredPermissions.Contains(commandKey))) {
+        string permissionKey = isGeneric ? _getContainingPlacePermissionName(commandKey, typeof(TLocation).Name, atLocation, withModifiers) + commandKey : permissionName;
+        if (!executor.GrantedPermissions.Contains(permissionKey)) {
+          message = $"Character: {executor.UniqueName} does not have the permission: {permissionKey} required at the {typeof(TLocation).Name} level by world: {atLocation.Name}::{atLocation.Id}";
+          return false;
+        }
+      }
+
+      message = "Success!";
+      return true;
+    }
+
+    private static bool _validateProximity(System.Type requiredProximity, IActor executor, ILocation atLocation, IModel model, out string message) {
+      // TODO: not yet implemented
+
+      message = "Success!";
+      return true;
+    }
+
+    #endregion
+
+    ICommand Make();
   }
 
   public partial class Command<TActsOn> {
@@ -59,18 +261,19 @@ namespace Indra.Data {
       }
 
       /// <summary>
-      /// If this command requires a target
-      /// </summary>
-      public abstract bool RequiresTarget {
-        get;
-      }
-
-      /// <summary>
       /// The required proximity. This should be a typeof Place, or null if it can be done anywhere.
       /// </summary>
       public abstract System.Type RequiredProximity {
         get;
       }
+
+      ///<summary><inheritdoc/></summary>
+      public virtual System.Type ReturnType 
+        => null;
+
+      ///<summary><inheritdoc/></summary>
+      public virtual bool CanBeUndone
+        => true;
 
       /// <summary>
       /// Used to make new Child Archetypes for Command.Type 
@@ -100,7 +303,7 @@ namespace Indra.Data {
       /// <summary>
       /// What happens when this command is executed.
       /// </summary>
-      abstract internal protected void Execute(Command<TActsOn> command, TActsOn model, PlayerCharacter executor, Place location, IReadOnlyDictionary<Parameter.Data, Parameter> withParams);
+      abstract internal protected void Execute(Command<TActsOn> command, TActsOn model, IActor executor, ILocation location, IReadOnlyDictionary<Parameter.Data, Parameter> withParams);
 
       internal void _validateParamsAndExecuteCommand(Command<TActsOn> command, string modelId, string executorId, string locationId, IReadOnlyList<Parameter> withParams) {
         _validateParams(withParams);
@@ -109,87 +312,74 @@ namespace Indra.Data {
 
         TActsOn target = ModelPorter<TActsOn>.DefaultInstance.TryToLoadByKey(modelId);
         PlayerCharacter executor = ModelPorter<PlayerCharacter>.DefaultInstance.TryToLoadByKey(executorId);
-        Place location = ModelPorter<Place>.DefaultInstance.TryToLoadByKey(locationId);
+        ILocation location = ModelPorter<Place>.DefaultInstance.TryToLoadByKey(locationId);
 
         _validatePermissions(target, executor, location);
-        Execute(command, target, executor, location, orderedParams);
-      }
 
-      void _validatePermissions(TActsOn model, PlayerCharacter executor, Place atLocation) {
-        if(RequiresTarget && model is null) {
-          throw new ArgumentNullException(nameof(model));
-        }
+        command.Result = new ICommand.Results() {
+          ExecutionParameters = orderedParams.Values.ToList(),
+          ExecutedOnModel = target,
+          Executor = executor,
+          ExecutedAtLocation = location
+        };
 
-        _validateProximity(RequiredProximity, executor, atLocation, model);
-
-        // check for permission limits
-        string permissionName = model + "_" + Id.Key;
-
-        // Make sure the player has permissions where they are, and where the model is.
-        if (model is Thing thing) {
-          _validateContainingPlacePermissions(thing.Location, executor, permissionName);
-        }
-        _validateContainingPlacePermissions(atLocation, executor, permissionName);
-
-        /// we don't need to validate anything else if we're trying to act on a place
-        if(!typeof(Place).IsAssignableFrom(typeof(TActsOn))) {
-          _validateModelLevelPermissions(permissionName, model, executor);
+        try {
+          Execute(command, target, executor, location, orderedParams);
+          command.Result = command.Result with {
+            Success = true
+          };
+        } catch(Exception e) {
+          command.Result = command.Result with {
+            Success = false,
+            Error = e
+          };
         }
       }
 
-      void _validateContainingPlacePermissions(Place containingLocation, PlayerCharacter executor, string permissionName) {
-        if(containingLocation is World world) {
-          _validateWorldLevelPermissions(executor, world, permissionName);
+      /// <summary>
+      /// Undo the command.
+      /// </summary>
+      abstract internal protected void Undo(Command<TActsOn> executedCommand, IActor undoer, ILocation undoFromLocation);
+
+      internal void _validateAndUndoCommand(Command<TActsOn> executedCommand, string undoerId, string locationId) {
+        if (!CanBeUndone) {
+          throw new InvalidOperationException($"Cannot undo command: {executedCommand.Name}, as it was not designed to be undone (CanBeUndone is False).");
         }
-        else if(containingLocation is Room room) {
-          _validateRoomLevelPermissions(executor, room, permissionName);
-          _validateWorldLevelPermissions(executor, room.World, permissionName);
+        if (!executedCommand.Result?.Success ?? false) {
+          throw new InvalidOperationException($"Cannot undo command: {executedCommand.Name}, as it was not executed successfully.");
         }
-        else if(containingLocation is Area area) {
-          _validateAreaLevelPermissions(executor, area, permissionName);
-          _validateRoomLevelPermissions(executor, area.Room, permissionName);
-          _validateWorldLevelPermissions(executor, area.Room.World, permissionName);
-        }
+
+        PlayerCharacter undoer = ModelPorter<PlayerCharacter>.DefaultInstance.TryToLoadByKey(undoerId);
+        Place undoFromLocation = ModelPorter<Place>.DefaultInstance.TryToLoadByKey(locationId);
+
+        if (ICommandType.CheckPermission(this, undoer, executedCommand.Result.ExecutedOnModel, undoFromLocation, out string message)) {
+          Undo(executedCommand, undoer, undoFromLocation);
+          executedCommand.Result = executedCommand.Result with { Undoer = undoer };
+        } else throw new AccessViolationException(message);
       }
 
-      void _validateModelLevelPermissions(string permissionName, TActsOn model, PlayerCharacter executor) {
-        if(model.RequiredPermissions.Contains(permissionName)) {
-          Permission existingPermission = executor.Permissions.TryToGet(permissionName);
-          if(existingPermission == null) {
-            throw new AccessViolationException($"Character: {executor.UniqueName} does not have the permission: {permissionName} required at the model level by model: {model}::{model.Id}");
-          }
+      /// <summary>
+      /// Check if a command can be seen at all by a given actor.
+      /// </summary>
+      internal protected virtual bool CommandIsVisibleToActor(Command<TActsOn> command, IActor actor)
+        => true;
+
+      internal bool _checkVisibility(Command<TActsOn> command, string targetId, string actorId, string locationId) {
+        PlayerCharacter actor = ModelPorter<PlayerCharacter>.DefaultInstance.TryToLoadByKey(actorId);
+        Place location = ModelPorter<Place>.DefaultInstance.TryToLoadByKey(locationId);
+        TActsOn target = ModelPorter<TActsOn>.DefaultInstance.TryToLoadByKey(targetId);
+
+        if (ICommandType.CheckPermission(this, actor, target, location, out _)) {
+          return CommandIsVisibleToActor(command, actor);
         }
+
+        return false;
       }
 
-      static void _validateWorldLevelPermissions(PlayerCharacter executor, World atLocation, string permissionName) {
-        if((atLocation as IModel).RequiredPermissions.Contains(permissionName)) {
-          Permission existingPermission = executor.Permissions.TryToGet(permissionName);
-          if (existingPermission == null) {
-            throw new AccessViolationException($"Character: {executor.UniqueName} does not have the permission: {permissionName} required at the world level by world: {atLocation.Name}::{atLocation.Id}");
-          }
-        }
-      }
-
-      static void _validateRoomLevelPermissions(PlayerCharacter executor, Room atLocation, string permissionName) {
-        if((atLocation as IModel).RequiredPermissions.Contains(permissionName)) {
-          Permission existingPermission = executor.Permissions.TryToGet(permissionName);
-          if (existingPermission == null) {
-            throw new AccessViolationException($"Character: {executor.UniqueName} does not have the permission: {permissionName} required at the room level by room: {atLocation.Name}::{atLocation.Id}");
-          }
-        }
-      }
-
-      static void _validateAreaLevelPermissions(PlayerCharacter executor, Area atLocation, string permissionName) {
-        if((atLocation as IModel).RequiredPermissions.Contains(permissionName)) {
-          Permission existingPermission = executor.Permissions.TryToGet(permissionName);
-          if (existingPermission == null) {
-            throw new AccessViolationException($"Character: {executor.UniqueName} does not have the permission: {permissionName} required at the area level by area: {atLocation.Name}::{atLocation.Id}");
-          }
-        }
-      }
-
-      void _validateProximity(System.Type requiredProximity, PlayerCharacter executor, Place atLocation, TActsOn model) 
-        => throw new NotImplementedException();
+      bool _validatePermissions(TActsOn model, IActor executor, ILocation atLocation)
+        => ICommandType.CheckPermission(this, executor, model, atLocation, out string message)
+          ? true
+          : throw new AccessViolationException(message);
 
       internal virtual void _validateParams(IReadOnlyList<Parameter> withParams) {
         bool validatingRequiredParameters = HasRequiredParameters;
@@ -230,6 +420,14 @@ namespace Indra.Data {
 
       ICommand ICommandType.Make()
         => Make();
+
+      /// <summary>
+      /// Sets the return value of a command.
+      /// For use in the Execute function.
+      /// </summary>
+      protected void SetReturnValue(Command<TActsOn> command, object @return) {
+        command.Result = command.Result with { Return = @return };
+      }
     }
   }
 }

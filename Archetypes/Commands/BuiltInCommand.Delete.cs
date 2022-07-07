@@ -7,13 +7,10 @@ using System.Collections.Generic;
 using System.Reflection;
 
 namespace Indra.Data {
-  public partial class BuiltInCommand {
+  /*public partial class BuiltInCommand {
 
     [Meep.Tech.Data.Configuration.Loader.Settings.DoNotBuildInInitialLoad]
     public sealed class Delete : BuiltInCommand<Delete> {
-
-      public override bool RequiresTarget
-        => true;
 
       public override System.Type RequiredProximity
         => ModelType switch {
@@ -32,5 +29,5 @@ namespace Indra.Data {
         Id.Universe.GetModData().ModelPorters[ModelType].Delete(model.Id);
       }
     }
-  }
+  }*/
 }

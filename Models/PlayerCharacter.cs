@@ -15,15 +15,8 @@ namespace Indra.Data {
   /// </summary>
 
   [Meep.Tech.Data.Configuration.Dependency(typeof(User))]
-  public partial class PlayerCharacter : Model<PlayerCharacter>.WithComponents, IModel {
-    readonly Dictionary<string, Permission> permissions = new();
-    List<string> IModel._requiredPermissions { get; set; }
-         = new();
-
-    /// <summary>
-    /// Used to save permissions given to characters
-    /// </summary>
-    public record Permission(string Key, string ModelId, PlayerCharacter forCharacter);
+  public partial class PlayerCharacter : Model<PlayerCharacter>.WithComponents, IModel, IActor {
+    readonly HashSet<string> _permissions = new();
 
     /// <summary>
     /// The unique id of this player character model.
@@ -37,12 +30,14 @@ namespace Indra.Data {
     /// The unique name of the character.
     /// </summary>
     [AutoBuild, Required, NotNull]
+    [ModelUpdateCommand]
     [TestValue("Bob")]
     public string UniqueName { get; private set; }
 
     /// <summary>
     /// The display name of the character.
     /// </summary>
+    [ModelUpdateCommand]
     [AutoBuild(DefaultValueGetterDelegateName = nameof(_getDefaultDisplayName))]
     public string DisplayName { get; private set; }
 
@@ -52,31 +47,38 @@ namespace Indra.Data {
     [AutoBuild, Required, NotNull]
     [AutoPort]
     [JsonIgnore]
-    [Indra.Data.Immutable]
     [TestValueIsTestModel]
     public User Creator { get; private set; }
-
-    /// <summary>
-    /// The permissions of the user for the current server
-    /// </summary>
-    public IReadOnlyDictionary<string, Permission> Permissions 
-      => permissions;
 
     /// <summary>
     /// TODO: this should try to return the player's location within the world the request for this information is requested from.
     /// To get location in another world, use GetLocation(World);
     /// </summary>
+    [AutoPort]
     public Place Location {
       get;
       private set;
     }
 
-    public Place GetLocation(World world) {
-      throw new System.NotImplementedException();
-    }
+    ///<summary><inheritdoc/></summary>
+    [ModelAddCommand, ModelRemoveCommand]
+    public IEnumerable<string> RequiredPermissions {
+      get;
+    } = new List<string>();
+
+    /// <summary>
+    /// The permissions of the user for the current server
+    /// </summary>
+    public IEnumerable<string> GrantedPermissions 
+      => _permissions;
 
     #region XBam Config 
+
     string IUnique.Id { get => Id; set => Id = value; }
+
+    ///<summary><inheritdoc/></summary>
+    public World World 
+      => Location.World;
 
     PlayerCharacter() { }
 
@@ -94,7 +96,7 @@ namespace Indra.Data {
 
     AutoBuildAttribute.DefaultValueGetter _getDefaultDisplayName 
       = (builder, model) 
-        => (model as PlayerCharacter).DisplayName = builder.GetParam(nameof(UniqueName), (model as PlayerCharacter).DisplayName); 
+        => (model as PlayerCharacter).DisplayName = builder.GetParam(nameof(UniqueName), (model as PlayerCharacter).DisplayName);
 
     #endregion
   }

@@ -6,13 +6,10 @@ using System.Collections.Generic;
 using System.Reflection;
 
 namespace Indra.Data {
-  public partial class BuiltInCommand {
+  /*public partial class BuiltInCommand {
 
     [Meep.Tech.Data.Configuration.Loader.Settings.DoNotBuildInInitialLoad]
     public sealed class Update : BuiltInCommand<Update> {
-
-      public override bool RequiresTarget
-        => true;
 
       public override System.Type RequiredProximity
         => ModelType switch {
@@ -67,5 +64,5 @@ namespace Indra.Data {
         }
       }
     }
-  }
+  }*/
 }

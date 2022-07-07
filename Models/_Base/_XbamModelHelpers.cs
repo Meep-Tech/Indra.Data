@@ -30,7 +30,7 @@ namespace Indra.Data {
       }
     }
 
-    /// <summary>
+    /*/// <summary>
     /// Get data fields for the given model type.
     /// </summary>
     public static Dictionary<string, PropertyInfo> GetDataFieldsFor(System.Type modelType) {
@@ -44,7 +44,7 @@ namespace Indra.Data {
       }
 
       return existingFieldsData;
-    }
+    }*/
   }
 
   public abstract partial class Model<TModelBase, TArchetypeBase> where TModelBase : Model<TModelBase, TArchetypeBase>

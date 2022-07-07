@@ -35,15 +35,8 @@ namespace Indra.Data {
     /// <summary>
     /// Required permissions for interactions with this model.
     /// </summary>
-    public IEnumerable<string> RequiredPermissions
-      => _requiredPermissions;
-
-    /// <summary>
-    /// Required permissions for interactions with this model.
-    /// </summary>
-    internal List<string> _requiredPermissions {
+    public IEnumerable<string> RequiredPermissions {
       get;
-      set;
     }
   }
 
@@ -60,7 +53,9 @@ namespace Indra.Data {
       IModel._allBaseModelTypes.Add(typeof(TModelBase));
     }
 
-    [Indra.Data.Immutable]
+    ///<summary>
+    ///The unique id of this model
+    ///</summary>
     public string Id {
       get;
       private set;
@@ -69,10 +64,12 @@ namespace Indra.Data {
       set => Id = value;
     }
 
+    ///<summary><inheritdoc/></summary>
+    [ModelAddCommand, ModelRemoveCommand]
     [AutoBuild(ParameterName = nameof(IModel.RequiredPermissions))]
-    List<string> IModel._requiredPermissions {
+    public IEnumerable<string> RequiredPermissions {
       get;
-      set;
-    } = new List<string>();
+      protected set;
+    }
   }
 }

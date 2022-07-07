@@ -7,7 +7,7 @@ using System.Reflection;
 
 namespace Indra.Data {
 
-  public abstract partial class BuiltInCommand<TCommand>
+  /*public abstract partial class BuiltInCommand<TCommand>
       : Command<IModel>.Type,
         Archetype.ISplayed<IModel.BaseType, TCommand>
       where TCommand : Command<IModel>.Type,
@@ -33,5 +33,5 @@ namespace Indra.Data {
 
     TCommand _buildCorrectSubTypeForModelType(IModel.BaseType enumeration)
       => (TCommand)GetType().GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single().Invoke(new object[] { enumeration });
-  }
+  }*/
 }
