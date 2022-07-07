@@ -361,7 +361,7 @@ namespace Indra.Data {
       /// <summary>
       /// Check if a command can be seen at all by a given actor.
       /// </summary>
-      internal protected virtual bool CommandIsVisibleToActor(Command<TActsOn> command, IActor actor)
+      internal protected virtual bool CommandIsVisibleToActor(Command<TActsOn> command, IActor actor, TActsOn target, Place location)
         => true;
 
       internal bool _checkVisibility(Command<TActsOn> command, string targetId, string actorId, string locationId) {
@@ -370,7 +370,7 @@ namespace Indra.Data {
         TActsOn target = ModelPorter<TActsOn>.DefaultInstance.TryToLoadByKey(targetId);
 
         if (ICommandType.CheckPermission(this, actor, target, location, out _)) {
-          return CommandIsVisibleToActor(command, actor);
+          return CommandIsVisibleToActor(command, actor, target, location);
         }
 
         return false;

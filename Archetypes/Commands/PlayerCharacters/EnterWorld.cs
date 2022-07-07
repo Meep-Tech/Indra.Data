@@ -12,7 +12,7 @@ namespace Indra.Data.Commands {
     public override Type RequiredProximity 
       => null;
 
-    public EnterWorld(Identity id, string description, IReadOnlyList<Parameter.Data> parameters = null)
+    EnterWorld()
       : base(
           new(nameof(EnterWorld)),
           "Used by Player Characters to Enter Worlds in the Current Server.",

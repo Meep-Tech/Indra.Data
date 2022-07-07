@@ -12,6 +12,15 @@ namespace Indra.Data {
   public interface ICommand {
 
     /// <summary>
+    /// Used to tell the types of actor to use
+    /// </summary>
+    public enum ActorType {
+      PlayerCharacter = 1,
+      Group = 2,
+      User = 4
+    }
+
+    /// <summary>
     /// The results of a command being executed.
     /// </summary>
     public record Results {

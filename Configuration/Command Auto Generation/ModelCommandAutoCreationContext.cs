@@ -40,27 +40,28 @@ namespace Indra.Data.Configuration {
             var commandBaseArchetype = typeof(Command<>.Type).MakeGenericType(modelType);
             foreach ((MemberInfo member, ModelCommandAutoGeneration attribute) in commandFunctions) {
               MethodInfo method = null;
-              string methodName = "";
+              string defaultCommandName = "";
+
               if (member is MethodInfo m) {
                 method = m;
-                methodName = method.Name;
+                defaultCommandName = method.Name;
               } else {
                 var p = member as PropertyInfo;
                 if (attribute is ModelGetCommandAttribute) {
                   method = p.GetGetMethod(true);
-                  methodName = "Get" + p.Name;
+                  defaultCommandName = "Get" + p.Name;
                 } else if (attribute is ModelUpdateCommandAttribute) {
                   method = null;
-                  methodName = "Update" + p.Name;
+                  defaultCommandName = "Update" + p.Name;
                 } else if (attribute is ModelAddCommandAttribute) {
                   method = null;
-                  methodName = "Add" + p.Name;
+                  defaultCommandName = "Add" + p.Name;
                 } else if (attribute is ModelRemoveCommandAttribute) {
                   method = null;
-                  methodName = "Remove" + p.Name;
+                  defaultCommandName = "Remove" + p.Name;
                 }
               }
-              string commandName = ICommandType.CleanCommandName(attribute.CommandNameOverride ?? methodName);
+              string commandKey = ICommandType.CleanCommandName(attribute.CommandNameOverride ?? defaultCommandName);
 
               // get the undo method first, because if it's missing we can just fail.
               MethodInfo undoMethod = null;
@@ -82,15 +83,15 @@ namespace Indra.Data.Configuration {
                     if (@params.Length == 0) {
                       _fail(
                         modelType,
-                        commandName,
-                        new InvalidOperationException($"Missing required first param that extends ICommand in Undo Method: {undoMethod.Name}, for Auto Built Command: {commandName}, on Model: {modelType.FullName}.")
+                        commandKey,
+                        new InvalidOperationException($"Missing required first param that extends ICommand in Undo Method: {undoMethod.Name}, for Auto Built Command: {commandKey}, on Model: {modelType.FullName}.")
                       );
                     }
                     if (!typeof(ICommand).IsAssignableTo(@params[0].ParameterType)) {
                       _fail(
                         modelType,
-                        commandName,
-                        new InvalidOperationException($"Missing required first param that extends ICommand in Undo Method: {undoMethod.Name}, for Auto Built Command: {commandName}, on Model: {modelType.FullName}.")
+                        commandKey,
+                        new InvalidOperationException($"Missing required first param that extends ICommand in Undo Method: {undoMethod.Name}, for Auto Built Command: {commandKey}, on Model: {modelType.FullName}.")
                       );
                     }
                     if (@params.Length > 1) {
@@ -99,8 +100,8 @@ namespace Indra.Data.Configuration {
                       } else {
                         _fail(
                           modelType,
-                          commandName,
-                          new InvalidOperationException($"Second param in Undo Method: {undoMethod.Name}, for Auto Built Command: {commandName}, on Model: {modelType.FullName}. Must be of type PlayerCharacter if it's provided.")
+                          commandKey,
+                          new InvalidOperationException($"Second param in Undo Method: {undoMethod.Name}, for Auto Built Command: {commandKey}, on Model: {modelType.FullName}. Must be of type PlayerCharacter if it's provided.")
                         );
                       }
                     }
@@ -110,8 +111,8 @@ namespace Indra.Data.Configuration {
                       } else {
                         _fail(
                           modelType,
-                          commandName,
-                          new InvalidOperationException($"Third param in Undo Method: {undoMethod.Name}, for Auto Built Command: {commandName}, on Model: {modelType.FullName}. Must be of type Place if it's provided.")
+                          commandKey,
+                          new InvalidOperationException($"Third param in Undo Method: {undoMethod.Name}, for Auto Built Command: {commandKey}, on Model: {modelType.FullName}. Must be of type Place if it's provided.")
                         );
                       }
                     }
@@ -119,8 +120,8 @@ namespace Indra.Data.Configuration {
                   catch (Exception ex) {
                     _fail(
                       modelType,
-                      commandName,
-                    new MissingMethodException($"Missing Undo Method for Auto Built Command: {commandName}, on Model: {modelType.FullName}. Make sure there is a Method on the same Model with the same name as the command, but with 'Undo' prefixed to the method name.", ex)
+                      commandKey,
+                    new MissingMethodException($"Missing Undo Method for Auto Built Command: {commandKey}, on Model: {modelType.FullName}. Make sure there is a Method on the same Model with the same name as the command, but with 'Undo' prefixed to the method name.", ex)
                     );
 
                     continue;
@@ -187,7 +188,7 @@ namespace Indra.Data.Configuration {
                   ? null 
                   : method.ReturnType;
 
-              Action<ICommand, IModel, PlayerCharacter, Place, IReadOnlyDictionary<Parameter.Data, Parameter>> execute
+              Action<ICommand, IModel, IActor, ILocation, IReadOnlyDictionary<Parameter.Data, Parameter>> execute
                 = attribute is ModelCommandAttribute
                   ? _getExecutionMethodFromExistingMethod(
                       method,
@@ -202,7 +203,7 @@ namespace Indra.Data.Configuration {
                     // attribute is ModelRemoveCommand
                     : _getRemoveFromCollectionMethod(member as PropertyInfo, ref parameters, dataParams);
 
-              Action<ICommand, PlayerCharacter, Place> undo
+              Action<ICommand, IActor, ILocation> undo
                 = attribute is ModelCommandAttribute
                   ? _getUndoMethodFromExistingMethod(method, undoMethodParamsCount)
                   : attribute is ModelAddCommandAttribute
@@ -210,15 +211,19 @@ namespace Indra.Data.Configuration {
                     // attribute is ModelRemoveCommand
                     : _getRemoveFromCollectionUndoMethod(member as PropertyInfo);
 
+              Func<ICommand, IModel, IActor, ILocation, bool> canBeSeen
+                = _getCanBeSeenLogic(attribute, member, attribute.CommandNameOverride ?? defaultCommandName);
+
               try {
                 Universe.Loader.AddInitializedArchetype(
                   (Archetype)AutoGeneratedCommand<World>.Type._buildAutoGeneratedCommand(
-                    commandName,
+                    commandKey,
                     attribute.Description,
                     modelType,
                     parameters.ToList(),
                     execute,
                     undo,
+                    canBeSeen,
                     requiredProximity,
                     returnType,
                     attribute.CanBeUndone
@@ -226,7 +231,7 @@ namespace Indra.Data.Configuration {
                 );
               }
               catch (Exception ex) {
-                _fail(modelType, commandName, ex);
+                _fail(modelType, commandKey, ex);
                 continue;
               }
             }
@@ -234,7 +239,42 @@ namespace Indra.Data.Configuration {
         }
       };
 
-    Action<ICommand, IModel, PlayerCharacter, Place, IReadOnlyDictionary<Parameter.Data, Parameter>> _getExecutionMethodFromExistingMethod(
+    Func<ICommand, IModel, IActor, ILocation, bool> _getCanBeSeenLogic(ModelCommandAutoGeneration attribute, MemberInfo member, string commandName) {
+      MemberInfo canBeSeenLogic;
+      if (attribute.CanBeSeenLogicMemberNameOverride is not null) {
+        canBeSeenLogic = member.DeclaringType.GetMember(
+          attribute.CanBeSeenLogicMemberNameOverride,
+          BindingFlags.NonPublic  | BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic
+        ).First();
+
+      } else {
+        string canSeeMethodName = "canSee" + commandName;
+        string canSeeCommandName = ICommandType.CleanCommandName(canSeeMethodName).ToLower();
+
+        canBeSeenLogic = member.DeclaringType.GetMembers(
+          BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic
+        ).FirstOrDefault(m => ICommandType.CleanCommandName(m.Name.ToLower()) == canSeeCommandName);
+      }
+
+      if (canBeSeenLogic is not null) {
+        if (canBeSeenLogic is PropertyInfo prop) {
+          if (prop.PropertyType != typeof(ModelCommandAutoGeneration.CanSeeCommandLogic)) {
+            throw new ArgumentException();
+          }
+          return (c, m, a, l) => (prop.GetValue(m) as ModelCommandAutoGeneration.CanSeeCommandLogic)(c, m, a, l);
+        }
+        else if (canBeSeenLogic is MethodInfo method) {
+          if (method.ReturnType != typeof(bool) || !method.GetParameters().Select(p => p.ParameterType).SequenceEqual(new[] { typeof(ICommand), typeof(IModel), typeof(IActor), typeof(ILocation) })) {
+            throw new ArgumentException();
+          }
+          return (c, m, a, l) => (bool)method.Invoke(m, new object[] { c, m, a, l });
+        }
+      }
+
+      return (_,_,_,_) => true;
+    }
+
+    Action<ICommand, IModel, IActor, ILocation, IReadOnlyDictionary<Parameter.Data, Parameter>> _getExecutionMethodFromExistingMethod(
       MethodInfo method,
       ParameterInfo[] allParams, 
       OrderedDictionary<ParameterInfo, (bool hasDefaultValue, object defaultValue)> commandParams, 
@@ -279,7 +319,7 @@ namespace Indra.Data.Configuration {
         }
       };
 
-    Action<ICommand, PlayerCharacter, Place> _getUndoMethodFromExistingMethod(MethodInfo undoMethod, int undoMethodParamsCount)
+    Action<ICommand, IActor, ILocation> _getUndoMethodFromExistingMethod(MethodInfo undoMethod, int undoMethodParamsCount)
       => (c, p, l)
         => undoMethod?.Invoke(
           c.Result.ExecutedOnModel,
@@ -288,8 +328,8 @@ namespace Indra.Data.Configuration {
             .ToArray()
         );
 
-    Action<ICommand, IModel, PlayerCharacter, Place, IReadOnlyDictionary<Parameter.Data, Parameter>> _getRemoveFromCollectionMethod(PropertyInfo property, ref IEnumerable<Parameter.Data> @params, OrderedDictionary<string, object> dataParams) {
-      Action<ICommand, IModel, PlayerCharacter, Place, IReadOnlyDictionary<Parameter.Data, Parameter>> execute;
+    Action<ICommand, IModel, IActor, ILocation, IReadOnlyDictionary<Parameter.Data, Parameter>> _getRemoveFromCollectionMethod(PropertyInfo property, ref IEnumerable<Parameter.Data> @params, OrderedDictionary<string, object> dataParams) {
+      Action<ICommand, IModel, IActor, ILocation, IReadOnlyDictionary<Parameter.Data, Parameter>> execute;
       if (property.DeclaringType.IsAssignableToGeneric(typeof(IDictionary<,>))) {
         @params = @params.Append(new("Key", "The Key to remove the item with", isRequired: true));
           dataParams.Add("removedItem", null);
@@ -312,8 +352,8 @@ namespace Indra.Data.Configuration {
       return execute;
     }
 
-    Action<ICommand, PlayerCharacter, Place> _getRemoveFromCollectionUndoMethod(PropertyInfo property) {
-      Action<ICommand, PlayerCharacter, Place> undo;
+    Action<ICommand, IActor, ILocation> _getRemoveFromCollectionUndoMethod(PropertyInfo property) {
+      Action<ICommand, IActor, ILocation> undo;
       if (property.DeclaringType.IsAssignableToGeneric(typeof(IDictionary<,>))) {
         undo = (c, p, l) => {
           (property.GetValue(c.Result.ExecutedOnModel) as IDictionary).Add(
@@ -332,8 +372,8 @@ namespace Indra.Data.Configuration {
       return undo;
     }
 
-    Action<ICommand, IModel, PlayerCharacter, Place, IReadOnlyDictionary<Parameter.Data, Parameter>> _getAddToCollectionMethod(PropertyInfo property, ref IEnumerable<Parameter.Data> @params) {
-      Action<ICommand, IModel, PlayerCharacter, Place, IReadOnlyDictionary<Parameter.Data, Parameter>> execute;
+    Action<ICommand, IModel, IActor, ILocation, IReadOnlyDictionary<Parameter.Data, Parameter>> _getAddToCollectionMethod(PropertyInfo property, ref IEnumerable<Parameter.Data> @params) {
+      Action<ICommand, IModel, IActor, ILocation, IReadOnlyDictionary<Parameter.Data, Parameter>> execute;
       if (property.DeclaringType.IsAssignableToGeneric(typeof(IDictionary<,>))) {
         @params = @params.Append(new("Key", "The Key to add the itme with", isRequired: true));
         execute = (c, m, p, l, @parms) => {
@@ -349,8 +389,8 @@ namespace Indra.Data.Configuration {
       return execute;
     }
 
-    Action<ICommand, PlayerCharacter, Place> _getAddToCollectionUndoMethod(PropertyInfo property) {
-      Action<ICommand, PlayerCharacter, Place> undo;
+    Action<ICommand, IActor, ILocation> _getAddToCollectionUndoMethod(PropertyInfo property) {
+      Action<ICommand, IActor, ILocation> undo;
       if (property.DeclaringType.IsAssignableToGeneric(typeof(IDictionary<,>))) {
         undo = (c, p, l) => {
           (property.GetValue(c.Result.ExecutedOnModel) as IDictionary).Remove(c.Result.ExecutionParameters.First().Value);
@@ -374,8 +414,8 @@ namespace Indra.Data.Configuration {
 
     object[] _replaceParams(
       ICommand command,
-      PlayerCharacter executor,
-      Place location,
+      IActor executor,
+      ILocation location,
       IReadOnlyDictionary<Parameter.Data, Parameter> parameters, 
       IEnumerable<ParameterInfo> allParams,
       Dictionary<ParameterInfo, (bool hasDefaultValue, object defaultValue)> commandParams,
